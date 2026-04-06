@@ -96,23 +96,35 @@ def predict_endpoint():
             prompt = """Act as an expert food safety detector. Look closely at the image. Rule 1: If the image is of a person, background, or not a clear food item, reply exactly with: "Not Food - Unknown". Rule 2: If it IS a clear food item, accurately identify the specific food name and determine if it is Fresh or Spoiled. Reply in exactly this format and nothing else: [Food Name] - [FRESH/SPOILED]"""
             response = gemini_model.generate_content([prompt, pil_image])
             raw_text = response.text.strip()
-            
-            if "Not Food" in raw_text or "Unknown" in raw_text:
+            logging.info(f"Gemini raw response: {raw_text}")
+
+            # Always split on '-' first to extract food name and status reliably
+            if '-' in raw_text:
+                parts = raw_text.split('-', 1)          # split on first dash only
+                detected_food = parts[0].strip()         # e.g. "Tomato"
+                detected_status = parts[1].strip().upper()  # e.g. "FRESH"
+            else:
+                detected_food = raw_text.strip()
+                detected_status = ""
+
+            if "NOT FOOD" in detected_food.upper() or "UNKNOWN" in detected_status:
+                food_name = "Not Food"
                 final_label = "Unknown"
                 voice_override = "This does not appear to be a clear food item."
-            elif 'SPOILED' in raw_text.upper() or 'ROT' in raw_text.upper():
+            elif "SPOILED" in detected_status or "ROT" in detected_status:
+                food_name = detected_food
                 final_label = "Spoiled"
-                food_name = raw_text.split('-')[0].strip() if '-' in raw_text else "item"
                 voice_override = f"Warning: This {food_name} appears spoiled."
-            elif 'FRESH' in raw_text.upper() or 'GOOD' in raw_text.upper():
+            elif "FRESH" in detected_status or "GOOD" in detected_status:
+                food_name = detected_food
                 final_label = "Fresh"
-                food_name = raw_text.split('-')[0].strip() if '-' in raw_text else "item"
                 voice_override = f"This {food_name} looks fresh."
             else:
+                food_name = detected_food if detected_food else "Unknown"
                 final_label = "Unknown"
                 voice_override = None
-                
-            prediction_confidence = 0.99 # Cloud models are highly precise
+
+            prediction_confidence = 0.99  # Cloud models are highly precise
             
         except Exception as e:
             logging.error(f"Gemini API Error: {e}")

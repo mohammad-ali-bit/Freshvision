@@ -294,14 +294,29 @@
                     body: JSON.stringify({ image: dataURL })
                 });
                 
-                const data = await response.json();
+                const result = await response.json();
 
-                // Auto-add real food to inventory if Gemini identified it
-                if (data.food_name && data.label && data.label !== 'Unknown' && data.label !== 'Error') {
-                    addToInventory(data.food_name, data.label);
+                // Auto-add scanned food to inventory using real Gemini data
+                if (
+                    result.food_name &&
+                    result.food_name !== 'Not Food' &&
+                    result.food_name !== 'Unknown' &&
+                    result.label !== 'Unknown' &&
+                    result.label !== 'Error'
+                ) {
+                    const isFresh   = result.label === 'Fresh';
+                    const isSpoiled = result.label === 'Spoiled';
+                    inventory.push({
+                        id:         inventoryIdCounter++,
+                        name:       result.food_name,
+                        status:     isFresh ? 'fresh' : isSpoiled ? 'spoiled' : 'warning',
+                        percentage: isFresh ? 90 : isSpoiled ? 5 : 40,
+                        time:       isFresh ? 'Fresh' : isSpoiled ? 'Spoiled' : 'Check Soon'
+                    });
+                    renderInventory();   // re-render immediately so user sees the item
                 }
 
-                handleScanResult(data);
+                handleScanResult(result);
             } catch (e) {
                 handleScanResult({ label: 'Error' });
             }

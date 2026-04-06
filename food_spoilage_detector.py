@@ -83,6 +83,8 @@ def predict_endpoint():
     else:
         b64_str = image_data
 
+    food_name = "Unknown"
+
     # Cloud AI Strategy
     if API_ACTIVE:
         try:
@@ -91,11 +93,7 @@ def predict_endpoint():
             pil_image = Image.open(io.BytesIO(img_bytes))
             
             # Formulate prompt for Gemini
-            prompt = """Act as an expert food safety detector. Look closely at the image. 
-            Rule 1: If the image is of a person, a background, or NOT a clear food item, reply exactly with: "Not Food - Unknown"
-            Rule 2: If it IS a clear food item, identify the specific food and determine if it is 'Fresh' or 'Spoiled'.
-            
-            Reply in exactly this format and nothing else: [Food Name] - [FRESH/SPOILED]"""
+            prompt = """Act as an expert food safety detector. Look closely at the image. Rule 1: If the image is of a person, background, or not a clear food item, reply exactly with: "Not Food - Unknown". Rule 2: If it IS a clear food item, accurately identify the specific food name and determine if it is Fresh or Spoiled. Reply in exactly this format and nothing else: [Food Name] - [FRESH/SPOILED]"""
             response = gemini_model.generate_content([prompt, pil_image])
             raw_text = response.text.strip()
             
@@ -125,10 +123,12 @@ def predict_endpoint():
         # Fallback to local heuristic
         final_label, prediction_confidence = simulate_prediction(b64_str)
         voice_override = None
+        food_name = "Simulated Item"
 
     voice_text = voice_override if voice_override else generate_voice_message(final_label)
 
     return jsonify({
+        "food_name": food_name,
         "label": final_label,
         "confidence": round(prediction_confidence, 2),
         "voice_text": voice_text
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     print("👉 To run on your phone, find this computer's IP address (e.g. 192.168.1.5)")
     print("👉 Then type exactly this in your iPhone/Android browser: https://<IP_ADDRESS>:8081")
     print("⚠️  Warning: Your browser will say 'Not Secure'. Click 'Advanced' -> 'Proceed' to allow camera access!")
-    # app.run(host="0.0.0.0", port=8081, ssl_context='adhoc', debug=False) this is for local host 
+    # app.run(host="0.0.0.0", port=8081, ssl_context='adhoc', debug=False) #this is for local host 
      #We remove ssl_context and hardcoded IPs because the cloud provider handles that now.
     import os
     port = int(os.environ.get("PORT", 8080))

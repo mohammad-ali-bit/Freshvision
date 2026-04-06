@@ -121,13 +121,36 @@
                         <h1 class="text-3xl font-bold text-slate-900">Inventory</h1>
                         <p class="text-slate-500 mt-1">Tracked Shelf Life</p>
                     </div>
-                    <button onclick="addMockItem()" class="bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 active:scale-[0.92] transition-transform">
+                    <button onclick="openAddModal()" class="bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 active:scale-[0.92] transition-transform">
                         <i data-lucide="plus" class="w-6 h-6"></i>
                     </button>
                 </div>
 
                 <div id="inventoryList" class="space-y-4">
-                    <!-- Items will be generated here by JS -->
+                    <!-- Items will be dynamically populated by real scan/manual data -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Manual Add Item Modal -->
+        <div id="addItemModal" class="hidden fixed inset-0 z-[100] flex items-end justify-center">
+            <!-- Backdrop -->
+            <div onclick="closeAddModal()" class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+            <!-- Sheet -->
+            <div class="relative z-10 w-full max-w-lg bg-white rounded-t-[28px] px-6 pt-6 pb-10 shadow-2xl">
+                <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-6"></div>
+                <h2 class="text-xl font-bold text-slate-900 mb-1">Add Food Item</h2>
+                <p class="text-slate-500 text-sm mb-5">Type the food name you want to track.</p>
+                <input
+                    type="text"
+                    id="manualFoodName"
+                    placeholder="e.g. Mango, Cheddar Cheese…"
+                    class="w-full border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50 mb-4"
+                    onkeydown="if(event.key==='Enter') saveManualItem()"
+                />
+                <div class="flex gap-3">
+                    <button onclick="closeAddModal()" class="flex-1 py-3 rounded-2xl border border-slate-200 text-slate-600 font-semibold text-base hover:bg-slate-50 active:scale-95 transition-all">Cancel</button>
+                    <button onclick="saveManualItem()" class="flex-1 py-3 rounded-2xl bg-blue-500 text-white font-bold text-base hover:bg-blue-600 active:scale-95 transition-all shadow-lg">Save</button>
                 </div>
             </div>
         </div>
@@ -272,6 +295,12 @@
                 });
                 
                 const data = await response.json();
+
+                // Auto-add real food to inventory if Gemini identified it
+                if (data.food_name && data.label && data.label !== 'Unknown' && data.label !== 'Error') {
+                    addToInventory(data.food_name, data.label);
+                }
+
                 handleScanResult(data);
             } catch (e) {
                 handleScanResult({ label: 'Error' });
@@ -320,19 +349,16 @@
         // ---------------------------------------------------------
         // Inventory Logic (Tab 2)
         // ---------------------------------------------------------
-        let initialInventory = [
-            { id: 1, name: "Organic Tomatoes", status: "fresh", percentage: 80, time: "4 Days Left" },
-            { id: 2, name: "Whole Milk", status: "warning", percentage: 20, time: "Expiring soon" },
-            { id: 3, name: "Strawberries", status: "spoiled", percentage: 5, time: "Spoiled" },
-        ];
-        
-        let inventoryIdCounter = 4;
+
+        // Real inventory — starts empty; populated by scanner or manual entry only.
+        let inventory = [];
+        let inventoryIdCounter = 1;
 
         function renderInventoryItem(item) {
-            let colorCls, barColorCls;
-            if (item.status === 'fresh') { colorCls = "text-fresh-green"; barColorCls = "bg-fresh-green"; }
-            else if (item.status === 'warning') { colorCls = "text-warning-yellow"; barColorCls = "bg-warning-yellow"; }
-            else { colorCls = "text-spoiled-red"; barColorCls = "bg-spoiled-red"; }
+            const isFresh = item.status === 'fresh';
+            const isSpoiled = item.status === 'spoiled';
+            const colorCls = isFresh ? 'text-fresh-green' : isSpoiled ? 'text-spoiled-red' : 'text-warning-yellow';
+            const barColorCls = isFresh ? 'bg-fresh-green' : isSpoiled ? 'bg-spoiled-red' : 'bg-warning-yellow';
 
             return `
                 <div id="item-${item.id}" class="bg-white rounded-[20px] p-5 shadow-sm border border-slate-100 flex flex-col gap-3 transition-all duration-300 transform scale-100 opacity-100 origin-top">
@@ -359,49 +385,64 @@
         }
 
         const invList = document.getElementById('inventoryList');
-        
-        function initInventory() {
-            if (initialInventory.length === 0) {
+
+        function renderInventory() {
+            if (inventory.length === 0) {
                 invList.innerHTML = `
-                    <div class="text-center py-12 opacity-70">
+                    <div class="text-center py-16 opacity-70">
                         <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-4 text-slate-400"></i>
                         <p class="font-medium text-slate-600 text-lg">Your inventory is empty</p>
-                        <p class="text-slate-400 text-sm mt-1">Tap + to add items</p>
+                        <p class="text-slate-400 text-sm mt-1">Scan food or tap + to add items</p>
                     </div>
                 `;
             } else {
-                invList.innerHTML = initialInventory.map(renderInventoryItem).join('');
+                invList.innerHTML = inventory.map(renderInventoryItem).join('');
             }
             lucide.createIcons();
         }
-        
+
+        function addToInventory(foodName, label) {
+            const isFresh = label === 'Fresh';
+            const isSpoiled = label === 'Spoiled';
+            const status = isFresh ? 'fresh' : isSpoiled ? 'spoiled' : 'warning';
+            const percentage = isFresh ? 90 : isSpoiled ? 5 : 40;
+            const time = isFresh ? 'Fresh' : isSpoiled ? 'Spoiled' : 'Check Soon';
+            inventory.unshift({ id: inventoryIdCounter++, name: foodName, status, percentage, time });
+            renderInventory();
+        }
+
         function deleteInventoryItem(id) {
             const el = document.getElementById(`item-${id}`);
             if (el) {
-                // Trigger CSS fade out
                 el.classList.remove('opacity-100', 'scale-100');
                 el.classList.add('opacity-0', 'scale-95');
-                
-                // Remove from array and DOM after animation completes
                 setTimeout(() => {
-                    initialInventory = initialInventory.filter(i => i.id !== id);
-                    initInventory();
+                    inventory = inventory.filter(i => i.id !== id);
+                    renderInventory();
                 }, 300);
             }
         }
-        
-        function addMockItem() {
-            const mocks = [
-                { name: "Bananas", status: "fresh", percentage: 60, time: "3 Days Left" },
-                { name: "Avocados", status: "warning", percentage: 15, time: "Eat Today!" },
-                { name: "Ground Beef", status: "spoiled", percentage: 0, time: "Discard" }
-            ];
-            const newItem = { ...mocks[Math.floor(Math.random() * mocks.length)], id: inventoryIdCounter++ };
-            initialInventory.unshift(newItem); // Add to top
-            initInventory();
+
+        // --- Manual Add Modal ---
+        function openAddModal() {
+            document.getElementById('addItemModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('manualFoodName').focus(), 100);
         }
 
-        initInventory();
+        function closeAddModal() {
+            document.getElementById('addItemModal').classList.add('hidden');
+            document.getElementById('manualFoodName').value = '';
+        }
+
+        function saveManualItem() {
+            const input = document.getElementById('manualFoodName');
+            const name = input.value.trim();
+            if (!name) return;
+            addToInventory(name, 'Fresh'); // Manual items default to Fresh; user can delete if wrong
+            closeAddModal();
+        }
+
+        renderInventory();
 
         // ---------------------------------------------------------
         // Hardware Sync Logic (Tab 3)

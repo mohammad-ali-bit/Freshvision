@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FreshCheck Scanner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Outfit', sans-serif; 
+            background: #f8fafc; 
+            color: #1e293b;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            touch-action: none;
+        }
+        
+        .app-header {
+            background: white;
+            padding: 20px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            z-index: 10;
+            border-bottom-left-radius: 20px;
+            border-bottom-right-radius: 20px;
+        }
+
+        .app-title { font-size: 1.4rem; font-weight: 800; color: #0f172a; }
+
+        .camera-container {
+            position: relative;
+            flex-grow: 1;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+        }
+        
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 24px;
+            opacity: 0.9;
+            transform: scale(1.02);
+            transition: opacity 0.3s;
+        }
+
+        .viewfinder {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 250px;
+            height: 250px;
+            border: 3px solid rgba(255,255,255,0.8);
+            border-radius: 30px;
+            pointer-events: none;
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.4); 
+            transition: all 0.3s;
+        }
+
+        .bottom-dock {
+            position: absolute;
+            bottom: 30px;
+            left: 20px;
+            right: 20px;
+            background: white;
+            padding: 24px;
+            border-radius: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            text-align: center;
+            z-index: 10;
+        }
+
+        .app-subtitle { font-size: 0.95rem; color: #64748b; margin-bottom: 20px; font-weight: 500; }
+
+        /* The big interactive button */
+        .scan-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 18px 40px;
+            border-radius: 25px;
+            font-weight: 800;
+            font-size: 1.3rem;
+            width: 100%;
+            border: none;
+            color: white;
+            background: #3b82f6; /* Beautiful default blue */
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+        
+        .scan-button:active { transform: scale(0.96); }
+        .scan-button:disabled { background: #cbd5e1; box-shadow: none; transform: none; cursor: not-allowed; }
+
+        /* Status Colors */
+        .state-loading { background: #f59e0b !important; box-shadow: 0 8px 24px rgba(245, 158, 11, 0.3) !important; animation: pulse 1.5s infinite; }
+        .state-fresh { background: #10b981 !important; box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3) !important; }
+        .state-spoiled { background: #ef4444 !important; box-shadow: 0 8px 24px rgba(239, 68, 68, 0.3) !important; }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.98); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-header">
+        <div class="app-title">FreshCheck AI</div>
+        <!-- Simple stylized user avatar -->
+        <div style="width: 36px; height: 36px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #94a3b8;">?</div>
+    </div>
+
+    <div class="camera-container">
+        <video id="videoElement" autoplay playsinline></video>
+        <div class="viewfinder" id="viewfinder"></div>
+        
+        <div class="bottom-dock" id="bottomDock">
+            <div class="app-subtitle" id="subtitleText">Center the food in the frame</div>
+            <button id="scanBtn" class="scan-button">TAP TO ANALYZE</button>
+        </div>
+    </div>
+
+    <canvas id="canvasElement" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('canvasElement');
+        const ctx = canvas.getContext('2d');
+        const scanBtn = document.getElementById('scanBtn');
+        const subtitleText = document.getElementById('subtitleText');
+        const viewfinder = document.getElementById('viewfinder');
+        
+        let isProcessing = false;
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Camera error:", err);
+                scanBtn.textContent = "CAMERA BLOCKED";
+                scanBtn.disabled = true;
+                subtitleText.textContent = "Please allow camera access in Settings/URL bar.";
+                viewfinder.style.display = "none";
+            }
+        }
+
+        // Trigger manual scan!
+        scanBtn.addEventListener('click', async () => {
+            if (isProcessing) return;
+            isProcessing = true;
+            
+            // Visual feedback
+            scanBtn.textContent = "ANALYZING...";
+            scanBtn.className = "scan-button state-loading";
+            subtitleText.textContent = "Cloud AI is inspecting image...";
+            
+            // Artificial camera flash
+            viewfinder.style.background = "rgba(255,255,255,0.8)";
+            setTimeout(() => { viewfinder.style.background = "transparent"; }, 150);
+
+            // Take snapshot
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+
+            try {
+                const response = await fetch('/api/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: dataURL })
+                });
+                
+                const result = await response.json();
+                updateUI(result.label, result.voice_text);
+            } catch (err) {
+                console.error("Connection Error", err);
+                subtitleText.textContent = "Network Error - Try Again";
+                resetButton();
+            } finally {
+                isProcessing = false;
+            }
+        });
+
+        function updateUI(label, voiceText) {
+            if (label === "Unknown" || label === "Error") {
+                 scanBtn.textContent = "UNABLE TO VERIFY";
+                 scanBtn.className = "scan-button"; // Default blue
+                 subtitleText.textContent = "Picture unclear. Please tap to try again.";
+                 viewfinder.style.borderColor = "rgba(255,255,255,0.8)";
+            } else {
+                 if (label === "Spoiled") {
+                     scanBtn.textContent = "NOT RECOMMENDED";
+                     scanBtn.className = "scan-button state-spoiled";
+                     subtitleText.textContent = "AI Warning: Item is rotting or spoiled";
+                     viewfinder.style.borderColor = "rgba(239, 68, 68, 0.9)";
+                 } else {
+                     scanBtn.textContent = "LOOKS FRESH!";
+                     scanBtn.className = "scan-button state-fresh";
+                     subtitleText.textContent = "AI verified: Item is fresh";
+                     viewfinder.style.borderColor = "rgba(16, 185, 129, 0.9)";
+                 }
+                 
+                 // Speech API 
+                 if (voiceText) {
+                     const utterance = new SpeechSynthesisUtterance(voiceText);
+                     speechSynthesis.speak(utterance);
+                     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                 }
+                 
+                 // Reset the button back to scan state after 4 seconds
+                 setTimeout(resetButton, 4000);
+            }
+        }
+        
+        function resetButton() {
+            if (!isProcessing) {
+                scanBtn.textContent = "TAP TO SCAN AGAIN";
+                scanBtn.className = "scan-button";
+                viewfinder.style.borderColor = "rgba(255,255,255,0.8)";
+                subtitleText.textContent = "Center the food in the frame";
+            }
+        }
+
+        startCamera();
+    </script>
+</body>
+</html>

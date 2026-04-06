@@ -91,16 +91,28 @@ def predict_endpoint():
             pil_image = Image.open(io.BytesIO(img_bytes))
             
             # Formulate prompt for Gemini
-            prompt = "Act as an expert food safety detector. Look closely at the food in this image. Is it 'Fresh' or 'Spoiled'? Reply with exactly one word: either FRESH or SPOILED."
-            response = gemini_model.generate_content([prompt, pil_image])
-            raw_text = response.text.strip().lower()
+            prompt = """Act as an expert food safety detector. Look closely at the image. 
+            Rule 1: If the image is of a person, a background, or NOT a clear food item, reply exactly with: "Not Food - Unknown"
+            Rule 2: If it IS a clear food item, identify the specific food and determine if it is 'Fresh' or 'Spoiled'.
             
-            if 'spoiled' in raw_text or 'rot' in raw_text:
+            Reply in exactly this format and nothing else: [Food Name] - [FRESH/SPOILED]"""
+            response = gemini_model.generate_content([prompt, pil_image])
+            raw_text = response.text.strip()
+            
+            if "Not Food" in raw_text or "Unknown" in raw_text:
+                final_label = "Unknown"
+                voice_override = "This does not appear to be a clear food item."
+            elif 'SPOILED' in raw_text.upper() or 'ROT' in raw_text.upper():
                 final_label = "Spoiled"
-            elif 'fresh' in raw_text or 'good' in raw_text:
+                food_name = raw_text.split('-')[0].strip() if '-' in raw_text else "item"
+                voice_override = f"Warning: This {food_name} appears spoiled."
+            elif 'FRESH' in raw_text.upper() or 'GOOD' in raw_text.upper():
                 final_label = "Fresh"
+                food_name = raw_text.split('-')[0].strip() if '-' in raw_text else "item"
+                voice_override = f"This {food_name} looks fresh."
             else:
                 final_label = "Unknown"
+                voice_override = None
                 
             prediction_confidence = 0.99 # Cloud models are highly precise
             
@@ -108,11 +120,13 @@ def predict_endpoint():
             logging.error(f"Gemini API Error: {e}")
             final_label = "Error"
             prediction_confidence = 0.0
+            voice_override = None
     else:
         # Fallback to local heuristic
         final_label, prediction_confidence = simulate_prediction(b64_str)
+        voice_override = None
 
-    voice_text = generate_voice_message(final_label)
+    voice_text = voice_override if voice_override else generate_voice_message(final_label)
 
     return jsonify({
         "label": final_label,

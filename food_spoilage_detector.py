@@ -1,5 +1,4 @@
 import os
-import cv2
 import base64
 import logging
 import io
@@ -84,6 +83,9 @@ def predict_endpoint():
         b64_str = image_data
 
     food_name = "Unknown"
+    final_label = "Unknown"
+    prediction_confidence = 0.0
+    voice_override = None
 
     # Cloud AI Strategy
     if API_ACTIVE:
@@ -147,19 +149,13 @@ def predict_endpoint():
     })
 
 if __name__ == "__main__":
-    # Host on 0.0.0.0 to broadcast to LAN for cell phone connectivity
-    print("======================================================")
-    print(" 🚀 FreshVision Cloud Web Server Active (HTTPS) 🚀")
-    if API_ACTIVE:
-         print(" 🌟 CLOUD AI: GEMINI VISION ACTIVATED 🌟")
-    else:
-         print(" ⚠️ CLOUD AI OFFLINE: Fallback color mode active. Please add API Key to .env!")
-    print("======================================================")
-    print("👉 To run on your phone, find this computer's IP address (e.g. 192.168.1.5)")
-    print("👉 Then type exactly this in your iPhone/Android browser: https://<IP_ADDRESS>:8081")
-    print("⚠️  Warning: Your browser will say 'Not Secure'. Click 'Advanced' -> 'Proceed' to allow camera access!")
-    # app.run(host="0.0.0.0", port=8081, ssl_context='adhoc', debug=False) #this is for local host 
-     #We remove ssl_context and hardcoded IPs because the cloud provider handles that now.
-    import os
     port = int(os.environ.get("PORT", 8080))
+    print("======================================================")
+    print(" 🚀 FreshVision Cloud Web Server Active 🚀")
+    if API_ACTIVE:
+        print(" 🌟 CLOUD AI: GEMINI VISION ACTIVATED 🌟")
+    else:
+        print(" ⚠️  CLOUD AI OFFLINE: Add GEMINI_API_KEY to .env")
+    print(f" Running on port {port}")
+    print("======================================================")
     app.run(host="0.0.0.0", port=port, debug=False)
